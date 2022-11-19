@@ -1,8 +1,43 @@
 # [Choice] Python version (use -bullseye variants on local arm64/Apple Silicon): 3, 3.10, 3.9, 3.8, 3.7, 3.6, 3-bullseye, 3.10-bullseye, 3.9-bullseye, 3.8-bullseye, 3.7-bullseye, 3.6-bullseye, 3-buster, 3.10-buster, 3.9-buster, 3.8-buster, 3.7-buster, 3.6-buster
-ARG VARIANT=3.10-bullseye
-FROM mcr.microsoft.com/vscode/devcontainers/python:${VARIANT}
+ARG VARIANT="3.10-bullseye"
+FROM python:${VARIANT}
 
-ARG NODE_VERSION=16
+# Copy library scripts to execute
+COPY library-scripts/*.sh library-scripts/*.env /tmp/library-scripts/
+
+# [Option] Install zsh
+ARG INSTALL_ZSH="true"
+# [Option] Upgrade OS packages to their latest versions
+ARG UPGRADE_PACKAGES="true"
+# Install needed packages and setup non-root user. Use a separate RUN statement to add your own dependencies.
+ARG USERNAME="none"
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+  # Remove imagemagick due to https://security-tracker.debian.org/tracker/CVE-2019-10131
+  && apt-get purge -y imagemagick imagemagick-6-common \
+  # Install common packages
+  && bash /tmp/library-scripts/common-debian.sh "${INSTALL_ZSH}" "${USERNAME}" "${USER_UID}" "${USER_GID}" "${UPGRADE_PACKAGES}" "true" "true" \
+  && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+# Setup default python tools in a venv via pipx to avoid conflicts
+ENV PIPX_HOME=/usr/local/py-utils \
+  PIPX_BIN_DIR=/usr/local/py-utils/bin
+ENV PATH=${PATH}:${PIPX_BIN_DIR}
+RUN bash /tmp/library-scripts/python-debian.sh "none" "/usr/local" "${PIPX_HOME}" "${USERNAME}" \ 
+  && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+# [Choice] Node.js version: none, lts/*, 16, 14, 12, 10
+ARG NODE_VERSION="16"
+ENV NVM_DIR=/usr/local/share/nvm
+ENV NVM_SYMLINK_CURRENT=true \
+  PATH=${NVM_DIR}/current/bin:${PATH}
+RUN bash /tmp/library-scripts/node-debian.sh "${NVM_DIR}" "${NODE_VERSION}" "${USERNAME}" \
+  && apt-get clean -y && rm -rf /var/lib/apt/lists/*
+
+# Remove library scripts for final image
+RUN rm -rf /tmp/library-scripts
+
 ARG CLOUD_SDK_VERSION=409.0.0
 ENV CLOUD_SDK_VERSION=$CLOUD_SDK_VERSION
 ENV PYTHONUNBUFFERED 1
@@ -28,23 +63,11 @@ RUN apt-get update -y && export DEBIAN_FRONTEND=noninteractive \
   && apt-get install -y google-cloud-sdk=${CLOUD_SDK_VERSION}-0 google-cloud-sdk-app-engine-python=${CLOUD_SDK_VERSION}-0 google-cloud-sdk-app-engine-python-extras=${CLOUD_SDK_VERSION}-0 \
   && gcloud --version
 
-# Install GCP container registry credential helper
-RUN pip3 install pyopenssl && \ 
-  git config --system credential.'https://source.developers.google.com'.helper gcloud.sh
-
-# Switch into VSCode user
-USER vscode
-
-
 # Specify volume to persist config (GCloud and Firebase SDK authentication)
-RUN mkdir /home/vscode/.config
-VOLUME "/home/vscode/.config"
+VOLUME "/root/.config"
 
-# [Choice] Node.js version: none, lts/*, 16, 14, 12, 10
-RUN umask 0002 && . /usr/local/share/nvm/nvm.sh && nvm install ${NODE_VERSION} 2>&1
-
-# Install Firebase SDK/CLI
-RUN npm i -g firebase-tools
+# [Optional] Uncomment this line to install global node packages.
+RUN bash -c "source /usr/local/share/nvm/nvm.sh && npm install -g firebase-tools"
 
 WORKDIR /workspace
 
