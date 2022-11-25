@@ -66,8 +66,14 @@ RUN apt-get update -y && export DEBIAN_FRONTEND=noninteractive \
 # Specify volume to persist config (GCloud and Firebase SDK authentication)
 VOLUME "/root/.config"
 
-# [Optional] Uncomment this line to install global node packages.
+# Install Firebase CLI via NPM globally
 RUN bash -c "source /usr/local/share/nvm/nvm.sh && npm install -g firebase-tools"
+
+# Install PostgreSQL client (so we can connect via shell from worxspace container)
+RUN apt-get -y install --no-install-recommends postgresql-client
+
+# Install useful utilities: vim
+RUN apt-get -y install --no-install-recommends vim
 
 WORKDIR /workspace
 
@@ -75,6 +81,7 @@ WORKDIR /workspace
 EXPOSE 4000
 # Firestore
 EXPOSE 8080
+EXPOSE 9150
 # Firebase Auth
 EXPOSE 9099
 
